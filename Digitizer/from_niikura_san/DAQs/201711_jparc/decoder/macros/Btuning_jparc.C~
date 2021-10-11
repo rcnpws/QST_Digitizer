@@ -1,0 +1,13 @@
+void Btuning_jparc(int runnumber){
+  TFile * f=new TFile("./root/run%04d.root");
+  TTree* tree=(TTree*)f->Get("tree0");
+
+  TCanvas* c=new TCanvas("c","beam tuning",0,0,500,500);
+  TH1F* hplaf_mu = new TH1F("hplaf_mu","plaf muon",1000,0,1000);
+  TH1F* hplaf_e = new TH1F("hplaf_e","plaf e",1000,0,1000);
+  TH1F* hplab_mu = new TH1F("hplab_mu","plab muon",1000,0,1000);
+  TH1F* hplab_e = new TH1F("hplab_e","plab e",1000,0,1000);
+
+  
+  
+}

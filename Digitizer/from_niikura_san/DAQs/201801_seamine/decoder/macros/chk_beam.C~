@@ -1,0 +1,13 @@
+{
+
+  TFile *f4 = TFile::Open("root/run0294.root");
+  TFile *f5 = TFile::Open("root/run0294.root");
+  TFile *f6 = TFile::Open("root/run0294.root");
+  TFile *f7 = TFile::Open("root/run0294.root");
+  TFile *f8 = TFile::Open("root/run0294.root");
+  TFile *f9 = TFile::Open("root/run0294.root");
+  TFile *f10 = TFile::Open("root/run0294.root");
+  
+
+  
+}

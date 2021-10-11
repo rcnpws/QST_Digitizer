@@ -1,0 +1,336 @@
+// wave.C for oscilloscope mode only
+// $Id: analysis.C 2018-02-27 11:39:36 daq Exp $
+
+
+// -- ROOT headers
+#include "TApplication.h"
+#include "TROOT.h"
+#include "TFile.h"
+#include "TTree.h"
+#include "TF1.h"
+#include "TH2.h"
+#include "TString.h"
+#include "TCanvas.h"
+#include "TGraph.h"
+#include "TGraphErrors.h"
+#include "TMultiGraph.h"
+#include "TLegend.h"
+#include "TRandom.h"
+
+// -- General headers
+#include <cmath>
+#include <iostream>
+#include <sstream>
+#include <fstream>
+#include <iomanip>
+#include <cstdlib>
+#include <unistd.h>
+
+// -- User headers
+#include "analysis.h"
+#include "wave.h"
+#include "ge.h"
+
+using namespace std;
+
+int main(int argc, char *argv[])
+{
+  if(argc<2){
+    show_help();
+    return 1;
+  }
+
+  Int_t option;
+
+  Int_t RunNumber;  
+  
+  Bool_t debug=false;
+  Int_t oscillo_flag = 0;
+  Int_t hist_flag = 0;
+
+  while((option=getopt(argc,argv,"oOsSd"))!=-1){
+    switch(option){
+    case 'o':
+      oscillo_flag=1;
+      break;
+    case 'O':
+      oscillo_flag=2;
+      break;
+    case 's':
+      hist_flag=1;
+      break;
+    case 'S':
+      hist_flag=2;
+      break;
+    case 'd':
+      debug=true;
+      break;
+    }
+  }
+
+  cout << endl;
+
+  if(optind==argc-1){
+    RunNumber = atoi(argv[optind]);
+    if(RunNumber==0){
+      show_error(Form("<run_number> should be integer!"));
+      show_help();
+      return 1;
+    }
+  }else if(optind>argc-1){
+    show_error(Form("No <run_number> given!"));
+    show_help();
+    return 1;
+  }else if(optind<argc-1){
+    show_error(Form("This program can analyze run-by-run."));
+    show_error(Form("Provide only ONE <run_number> !"));
+    show_help();
+    return 1;
+  }
+	
+  cout << "========== START ANALYSIS ==========" << endl;
+  cout << endl;
+  // if(nRun==1){
+  cout << Form("---> Analysis for RUN # %04d",RunNumber) << endl;
+
+  if(argc>2){
+    cout << "---> Optoins : " << endl;
+  }
+  if(oscillo_flag==1)
+    cout << "       event-by-event oscilloscope mode ON (No save mode)" << endl;
+  if(oscillo_flag==2)
+    cout << "       continuous oscilloscope mode ON (No save mode)" << endl;
+  if(hist_flag==1)
+    cout << "       histgram mode for WaveDomp ON (No save mode)" << endl;
+  if(hist_flag==2)
+    cout << "       histgram mode for PHA ON (No save mode)" << endl;
+  if(debug)
+    cout << "       debug mode ON" << endl;
+
+  cout << endl;
+
+  // ===================================================================================================
+
+  // --- define open file names
+  char *inputfilename;
+  char *outputfilename;
+  
+  // if(RunNumber%3==0){
+  //   inputfilename = Form("/data00/RCNP1801_00/run%04d.dat",RunNumber);
+  // }else if(RunNumber%3==1){
+  //   inputfilename = Form("/data01/RCNP1801_01/run%04d.dat",RunNumber);
+  // }else{
+  //   inputfilename = Form("/data02/RCNP1801_02/run%04d.dat",RunNumber);
+  // }
+  if(RunNumber%2==0)
+      inputfilename = Form("/data00/JPARC1803_00/run%04d.dat",RunNumber);
+  else
+    inputfilename = Form("/data01/JPARC1803_01/run%04d.dat",RunNumber);
+      
+  if(oscillo_flag || hist_flag)
+    outputfilename = Form("./tmp.root");
+  else{
+    outputfilename = Form("./root/run%04d.root",RunNumber);
+  }
+  
+  // --- open files
+  std::ifstream *fin = new std::ifstream(inputfilename, ios::in | ios::binary);
+  cout << "---> Input File  : " << inputfilename << endl;
+  if(fin->fail()){
+    show_error(Form("File open failed!! --- %s",inputfilename));
+    return 1;
+  }
+  
+  TFile *fout = TFile::Open(outputfilename,"recreate");
+  cout << "---> Output File : " << outputfilename << endl << endl;
+
+  // --- waveform
+  WaveForm wf(fout);
+
+  // --- ge
+  Ge ge1(fout,1);
+  Ge ge2(fout,2);
+
+  TApplication app( "app", &argc, argv );
+  TCanvas *c2;
+  if(oscillo_flag)
+    wf.DefineWave();
+  if(hist_flag==1)
+    wf.DefineHist();
+  if(hist_flag==2){
+    ge1.DefineHist();
+    ge2.DefineHist();
+    c2= new TCanvas("c2","c2");
+    c2->Divide(1,2);
+  }
+
+  // --- parameters for reading file
+  uint32_t dd;
+
+  Int_t header[8];
+
+  Int_t iWaveEvent = 0;
+  Int_t iGeEvent1 = 0;
+  Int_t iGeEvent2 = 0;
+
+  fin->read( (char *)&dd, sizeof(uint32_t) );
+
+  while(1){
+    if(debug)
+      cout << "debug  " << Form("%x",dd)  << endl;
+    
+    if(fin->eof()){
+      cout << Form("\r%d events analyzed (about %3.1f min data)",
+      		   iWaveEvent, iWaveEvent/25./60.) << flush;
+      cout << endl;
+      break;
+    }      
+
+    // =============== GE ==================
+    if(dd==magic_number_ge){
+      ULong64_t	TimeTag;
+      ULong64_t	Format;
+      uint16_t	Extras;
+      uint32_t	Extras2;
+      uint32_t	channel;
+      uint32_t	evtnum;
+      uint32_t	board_handle;
+      uint32_t	evtnum_singleread;
+      uint16_t	energy;
+      fin->read( (char *)&TimeTag, sizeof(TimeTag) );
+      fin->read( (char *)&Format, sizeof(Format) );
+      fin->read( (char *)&Extras, sizeof(Extras) );
+      fin->read( (char *)&Extras2, sizeof(Extras2) );
+      fin->read( (char *)&channel, sizeof(channel) );
+      fin->read( (char *)&evtnum, sizeof(evtnum) );
+      fin->read( (char *)&board_handle, sizeof(board_handle) );
+      fin->read( (char *)&evtnum_singleread, sizeof(evtnum_singleread) );     
+      fin->read( (char *)&energy, sizeof(energy) );
+
+      if(channel==0){
+	iGeEvent1++;
+	ge1.TT     = TimeTag;
+	ge1.Eraw   = energy;
+	ge1.Ecal   = energy*1.0 + 0.;
+	ge1.ievent = iGeEvent1;
+	ge1.FillTree();
+	if(hist_flag==2){
+	  ge1.FillHist();
+	  if(iGeEvent1%10000==0){
+	    c2->cd(1);
+	    ge1.hraw->Draw();
+	    c2->Update();
+	  }
+	}
+	if(debug)
+	  cout << "GE1: " << iGeEvent1 << endl;
+      }
+      if(channel==2){
+	iGeEvent2++;
+	ge2.TT     = TimeTag;
+	ge2.Eraw   = energy;
+	ge2.Ecal   = energy*1.0 + 0.;
+	ge2.ievent = iGeEvent2;
+	ge2.FillTree();
+	if(hist_flag==2){
+	  ge2.FillHist();
+	  if(iGeEvent2%10000==0){
+	    c2->cd(2);
+	    ge2.hraw->Draw();
+	    c2->Update();
+	  }
+	}
+	if(debug)
+	  cout << "GE2: " << iGeEvent2 << endl;
+      }
+      
+      fin->read( (char *)&dd, sizeof(uint32_t) );
+      // if(fin->eof()) break;
+      continue;
+
+    // =============== WAVE ==================
+    }else if(dd==magic_number_wave){
+      // cout << "Wave" << endl;
+      for (int i=0;i<8;i++){
+	fin->read( (char *)&dd, sizeof(int) );
+	if(i==0) dd=dd&0x7fffffff; // TimeStamp has 31 bit
+	header[i]=dd;
+      }
+      if(debug)
+	cout << Form("Header Info: TS(0) = %10d, Event(4) = %6d,   BN(7) = %1d, CH(3) = %2d, MultiEvent(6) = %1d\n",header[0],header[4],header[7],header[3],header[6]);
+
+     
+      Int_t isample=0;
+      while(1){
+	fin->read( (char *)&dd, sizeof(int) );
+	if(dd==magic_number_wave || dd==magic_number_ge || fin->eof()) break;
+	
+	Int_t d1=( dd&0x0000ffff );
+	Int_t d2=( dd&0xffff0000 ) >> 16;
+	wf.wave[header[3]][isample*2] = d1;
+	wf.wave[header[3]][isample*2+1] = d2;
+	isample++;
+      }
+      
+    // =============== OTHER?? ==================
+    }else{
+      show_error(Form("?????"));
+      exit(1);
+    }
+
+
+    // =============== END OF BOARD ==================
+    if((header[7]==0 && LastCH[0]==header[3])){
+      if(debug)
+	cout << "=== End of Board ===" << endl;
+
+      // --- counter
+      iWaveEvent++;
+      if(iWaveEvent%1000==0){
+      	cout << Form("\r%d events analyzed (about %3.1f min data)",
+      		     iWaveEvent, iWaveEvent/25./60.) << flush;
+      }
+
+      // --- analysis
+      wf.ievent=iWaveEvent;
+      wf.TS=header[0];
+      wf.PSA();
+      wf.FillTree();
+
+      // --- oscilloscope mode
+      if(oscillo_flag){
+	wf.DrawWave();
+	if(oscillo_flag==1){
+	  string aa;
+	  // cin.ignore();
+	  cout << "type ENTER to continue, type q for quit " << endl;
+	  aa=cin.get();
+	  if(aa=="q")
+	    break;
+	}
+      }
+
+      // --- histogram mode
+      if(hist_flag==1){
+	wf.FillHist();
+	if(iWaveEvent%1000==0)
+	  wf.DrawHist();
+      }
+      if(hist_flag==2){
+      }
+
+      wf.InitVal();
+
+    }
+
+  }
+
+  wf.SaveTree();
+  ge1.SaveTree();
+  ge2.SaveTree();
+  fout->Close();
+
+  cout << endl;
+  cout << "bye!!" << endl;
+
+}

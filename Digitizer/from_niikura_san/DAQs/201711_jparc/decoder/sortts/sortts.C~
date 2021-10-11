@@ -1,0 +1,146 @@
+// ======================================================
+// -- Analysis.C
+//  main program for simple analysis
+//  normally user do not need to modify this file
+//
+//                 written by M. Niikura
+// 
+// $Id: evtbuild.C 2017-02-24 15:05:59 niikura Exp $
+
+// -- ROOT headers
+#include <TTree.h>
+#include <TROOT.h>
+#include <TChain.h>
+#include <TFile.h>
+#include <TF1.h>
+#include <TH2.h>
+#include <TStyle.h>
+#include <TCutG.h>
+#include <TString.h>
+#include <TDatime.h>
+
+// -- General headers
+#include <cmath>
+#include <iostream>
+#include <sstream>
+#include <fstream>
+#include <iomanip>
+#include <cstdlib>
+#include <unistd.h>
+
+// -- User headers
+#define BN0_cxx
+#define BN1_cxx
+#define Ge0_cxx
+#define Ge2_cxx
+
+#include "BN0.h"
+#include "BN1.h"
+#include "Ge0.h"
+#include "Ge2.h"
+
+
+using namespace std;
+
+int main(int argc, char** argv)
+{
+
+  if(argc>2 || argc==1){
+    cout << Form("Usage: ./evtbuild <RUN_NUMBER>\n");
+    exit(0);
+  }
+  
+  Int_t RunNumber = atoi(argv[argc-1]);
+  TString inputfilename = Form("./root/run%04d.root",RunNumber);
+  // TFIle *inputfile = TFile::Open(Form("./root/run%04d.root",RunNumber));
+
+  TChain *chain0 = new TChain("tree0");
+  TChain *chain1 = new TChain("tree1");
+  TChain *chain2 = new TChain("tree2");
+  TChain *chain3 = new TChain("tree3");
+
+  chain0->Add(inputfilename.Data());
+  chain1->Add(inputfilename.Data());
+  chain2->Add(inputfilename.Data());  
+  chain3->Add(inputfilename.Data());  
+  
+  TFile *outputfile = TFile::Open(Form("./root/sorted%04d.root",RunNumber),"recreate");
+  
+  BN0 fData0(chain0);
+  BN1 fData1(chain1);
+  Ge0 fData2(chain2);
+  Ge2 fData3(chain3);
+
+
+  TH1D *TSdiff1 = new TH1D("TSdiff1","time1-time0",1000,-1e4,1e4);
+  TH1D *TSdiff2 = new TH1D("TSdiff2","time2-time0",1000,-1e5,1e5);
+
+  Long64_t start_evt=0;
+  
+  
+  for(int i=0;i<2000;i++){
+
+    if(i%100==0)
+      cout << i << endl;
+      
+    Long64_t time0 = fData0.GetTimeStamp(i)*8;
+    Long64_t time1 = fData1.GetTimeStamp(i)*8;
+    TSdiff1->Fill(time1-time0);
+    // cout << endl << "==============" << endl;
+    // cout << Form("%10lld %10lld\n",time0,time1);
+
+    Long64_t j=start_evt;
+    Long64_t time2=0;
+
+    while(1){
+      time2 = fData2.GetTimeStamp(j)*2;
+      j++;
+      
+      if(time2-time0<-100000){
+	start_evt=j;
+	continue;
+      }
+      else if(time2-time0>100000.){
+	break;
+      }
+
+      TSdiff2->Fill(time2-time0);
+
+      // cout << Form("%lld %lld %lld\n",time0, time2, time2-time0);
+
+    }
+      
+    // Long64_t time3 = fData3.GetTimeStamp(i)*2;
+    // cout << Form("          %10lld %10lld %10lld\n",
+    // 		 time1-time0,time2-time0,time3-time0);
+  }
+
+  outputfile->Write();
+  outputfile->Close();
+  
+}
+
+ULong64_t BN0::GetTimeStamp(Long64_t jevent)
+{
+  fChain->GetEntry(jevent);
+  return TS0;
+}
+
+ULong64_t BN1::GetTimeStamp(Long64_t jevent)
+{
+  fChain->GetEntry(jevent);
+  return TS1;
+}
+
+ULong64_t Ge0::GetTimeStamp(Long64_t jevent)
+{
+  fChain->GetEntry(jevent);
+  return TimeTag;
+}
+
+ULong64_t Ge2::GetTimeStamp(Long64_t jevent)
+{
+  fChain->GetEntry(jevent);
+  return TimeTag;
+}
+

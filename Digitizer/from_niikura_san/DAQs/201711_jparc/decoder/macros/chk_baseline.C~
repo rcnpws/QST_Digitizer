@@ -1,0 +1,21 @@
+{
+
+  new TCanvas("c1","c1");
+  // c1->Divide(4,8);
+  
+  for(int i=0;i<32;i++){
+    Int_t bn = i/16;
+    Int_t ch = i%16;
+    cout << bn << " " << ch << endl;
+    tree0->Draw(Form("baseline%d[%d]>>h(100,-50,50)",bn,ch),"","");
+    // cout << h->GetMean() << ", ";
+    if(i%8==0) cout << endl;
+    c1->Update();
+    char in[10];
+    gets(in);
+      if(in[0]=='\0') cout << endl;
+      else break;
+	
+  }
+
+}

@@ -1,0 +1,387 @@
+// wave.C for pulse shape analysis for NIGIRI
+// written by M. Niikura
+// $Id: wave.C 2017-11-03 14:33:53 daq Exp $
+
+// -- ROOT headers
+#include "TApplication.h"
+#include "TROOT.h"
+#include "TFile.h"
+#include "TTree.h"
+#include "TF1.h"
+#include "TH2.h"
+#include "TString.h"
+#include "TCanvas.h"
+#include "TGraph.h"
+#include "TGraphErrors.h"
+#include "TMultiGraph.h"
+#include "TLegend.h"
+#include "TRandom.h"
+
+// -- General headers
+#include <cmath>
+#include <iostream>
+#include <sstream>
+#include <fstream>
+#include <iomanip>
+#include <cstdlib>
+#include <unistd.h>
+
+// -- User headers
+#include "utils.h"
+#include "detector.h"
+#include "histogram.h"
+#include "oscilloscope.h"
+#include "ge.h"
+
+using namespace std;
+
+int main(int argc, char *argv[])
+{
+
+  // ===================================================================================================
+  // --- CHECK RUN NUMBER AND OPTIONS  
+  
+  if(argc<2){
+    show_help();
+    return 1;
+  }
+
+  Int_t RunNumber=0;
+  Int_t option;
+  Bool_t waveform_flag=false;
+  Bool_t showhist_flag=false;
+  Int_t  oscillo_flag =0;
+  debug=false;
+
+  while((option=getopt(argc,argv,"wsoOd"))!=-1){
+    switch(option){
+    case 'w':
+      waveform_flag=true;
+      break;
+    case 's':
+      showhist_flag=true;
+      break;
+    case 'o':
+      oscillo_flag=1;
+      break;
+    case 'O':
+      oscillo_flag=2;
+      break;
+    case 'd':
+      debug=true;
+      break;
+    }
+  }
+
+  cout << endl;
+  if(optind==argc-1){
+    RunNumber = atoi(argv[optind]);
+    if(RunNumber==0){
+      show_error(Form("<run_number> should be integer!"));
+      show_help();
+      return 1;
+    }
+  }else if(optind>argc-1){
+    show_error(Form("No <run_number> given!"));
+    show_help();
+    return 1;
+  }else if(optind<argc-1){
+    show_error(Form("This program can analyze run-by-run."));
+    show_error(Form("Provide only ONE <run_number> !"));
+    show_help();
+    return 1;
+  }
+  
+  cout << "========== START ONLINE ANALYSIS ==========" << endl;
+  cout << endl;
+  cout << Form("---> Analysis for RUN # %04d",RunNumber) << endl;
+  if(argc>2){
+    cout << "---> Optoins : " << endl;
+  }
+  if(waveform_flag)
+    cout << "       waveform saving mode ON" << endl;
+  if(showhist_flag)
+    cout << "       show histgram mode ON" << endl;
+  if(oscillo_flag==1)
+    cout << "       event-by-event oscilloscope mode ON (No save mode)" << endl;
+  if(oscillo_flag==2)
+    cout << "       continuous oscilloscope mode ON (No save mode)" << endl;
+  if(debug)
+    cout << "       debug mode ON" << endl;
+  
+  cout << endl;
+
+
+  // === for histogram mode ===
+  TApplication app( "app", &argc, argv );
+
+  if(showhist_flag || oscillo_flag){
+    c1 = new TCanvas("c1","Waveforms");
+    // c1->Divide(2,1);
+  }
+  DefineHist();
+  DefineGraph();
+
+  // ===================================================================================================
+  // --- OPEN FILES
+  //char *inputfilename = Form("./data/run%04d.dat",RunNumber);
+  //char *inputfilename = Form("/data02/RAL1709_02/run%04d.dat",RunNumber); //for last calib after beamtime
+  
+  // if(RunNumber>187)
+  // inputfilename = Form("./data%02d/run%04d.dat",RunNumber%2,RunNumber);
+  // else
+  //inputfilename = Form("./data00/run%04d.dat",RunNumber);
+  //inputfilename = Form("/data02/RCNP1702_02/run%04d.dat",RunNumber);
+
+  char *inputfilename;
+  // if(RunNumber%2==0){
+  //   inputfilename = Form("/data00/JPARC1711_00/run%04d.dat",RunNumber);
+  // }else{
+  //   inputfilename = Form("/data01/JPARC1711_01/run%04d.dat",RunNumber);
+  // }
+  inputfilename = Form("/backup/JPARC1711/run%04d.dat",RunNumber);
+
+  
+  std::ifstream *fin = new std::ifstream(inputfilename, ios::in | ios::binary);
+  cout << "---> Input File  : " << inputfilename << endl;
+  if(fin->fail()){
+    show_error(Form("File open failed!! --- %s",inputfilename));
+    return 1;
+  }
+
+  TFile *fout;
+  if(oscillo_flag==0 && !waveform_flag){
+    char *outputfilename = Form("./root/run%04d.root",RunNumber);
+    cout << "---> Output File : " << outputfilename << endl;
+    fout = TFile::Open(outputfilename,"recreate");
+  }else if(oscillo_flag==0){
+    char *outputfilename = Form("./root/run%04d_wave.root",RunNumber);
+    cout << "---> Output File : " << outputfilename << endl;
+    fout = TFile::Open(outputfilename,"recreate");
+  }
+    
+  // --- DEFINE TREES
+  DefineTree(waveform_flag+oscillo_flag);
+  DefineTreeGe();
+    
+  // ===================================================================================================
+  // --- START READING FILES
+  
+  uint32_t dd;
+
+  Int_t header[8];
+  // event number given by module
+  Int_t ievent	= 0;
+  
+  Int_t ch	= -99; // Channel Number
+  Int_t bn	= -99; // Board Number
+
+  // analysis event counter
+  Int_t ana_event = 0;
+
+  fin->read( (char *)&dd, sizeof(int) );
+  
+  while(1){
+
+    //if(nevent0>100000) break;
+    
+    Int_t flag_waveorge = 0;
+
+    if(dd!=magic_number_wave && dd!=magic_number_ge && !fin->eof()){
+      show_error(Form("YOU ARE IN THE INFINIT LOOP !!!"));
+      show_error(Form(" (NO MAGIC_NUMBER DETECTED)"));
+      cout << dd << endl;
+      exit(1);
+    }
+
+    // ===== READ HEADERS =====
+    // -- for waveform
+    if(!fin->eof() && dd==magic_number_wave){
+      flag_waveorge = 1;
+      for (int i=0;i<8;i++){
+	fin->read( (char *)&dd, sizeof(int) );
+	if(i==0) dd=dd&0x7fffffff; // TimeStamp has 31 bit
+	header[i]=dd;
+      }
+    }
+
+    // -- for DPP-PSA
+    if(!fin->eof() && dd==magic_number_ge){
+      flag_waveorge = 2;
+      InitGe();
+
+      fin->read( (char *)&TimeTag, sizeof(TimeTag) );
+      fin->read( (char *)&Format, sizeof(Format) );
+      fin->read( (char *)&Extras, sizeof(Extras) );
+      fin->read( (char *)&Extras2, sizeof(Extras2) );
+      fin->read( (char *)&channel, sizeof(channel) );
+      fin->read( (char *)&evtnum, sizeof(evtnum) );
+      fin->read( (char *)&board_handle, sizeof(board_handle) );
+      fin->read( (char *)&evtnum_singleread, sizeof(evtnum_singleread) );     
+      fin->read( (char *)&energy, sizeof(energy) );
+      rawGe=(Int_t)energy;
+      
+      if(channel==0){
+      	GeE = 0.14197 + 0.302122*((Double_t)rawGe+gRandom->Uniform(0,1));
+      	// GeE = 1.08  + 0.40419*((Double_t)rawGe+gRandom->Uniform(0,1));
+	// GeE = 0.9969*GeE - 0.7118;
+	tree2->Fill();
+      }else if(channel==2){
+      	GeE = -0.924758 + 0.304869*((Double_t)rawGe+gRandom->Uniform(0,1));
+      	// GeE=-0.283 + 0.25942*((Double_t)rawGe+gRandom->Uniform(0,1));
+	tree3->Fill();
+      }else if(channel==4){
+      	GeE= 0.000 + 1.00000*((Double_t)rawGe+gRandom->Uniform(0,1));
+	tree4->Fill();
+      }else{
+      	GeE=-9999;
+      }
+
+
+      if(debug){
+      	cout << Form("TimeTag : %llu\t Format : %llu\n", TimeTag, Format);
+      	cout << Form("Extras  : %d\t Extras2 : %d\n", Extras, Extras2);
+      	cout << Form("channel : %d\t eventnum : %d\t board_handle : %d\t", channel, evtnum, board_handle);
+      	cout << Form("evtnum_singleread : %d\n energy : %d\n", evtnum_singleread, energy);
+      	// cin.ignore();
+      }
+
+      InitGe();
+      
+      fin->read( (char *)&dd, sizeof(int) );
+    }      
+    
+
+    // ===== END OF BOARD =====
+    if(flag_waveorge==1){
+      if(ievent!=header[4] || bn!=header[7] || fin->eof()){
+	if(bn==0){
+	  nevent0++;
+	  tree0->Fill();
+	  Init();
+	}else if(bn==1){
+	  nevent1++;
+	  tree1->Fill();
+	  Init();
+	}
+      
+	if(debug){
+	  cout << Form("   ===========   BOAD READ END  ===========   \n");
+	  cout << Form("     Nevent #0 = %5d\n",nevent0);
+	  cout << Form("     Nevent #1 = %5d\n",nevent1);
+	  cout << Form("   ========================================   \n");
+	  cout << endl;
+	}
+
+	// ====== EVENT BUILDED =====
+	// if(nevent0==nevent1 && nevent0!=0){
+	if(nevent0!=0){
+
+	  // if(nevent0>15000) break;
+	  
+	  if(debug) cout << Form("===========   START ANALYSIS UNTIL EVENT #%4d  ===========\n",nevent0);
+	  // -- analysis loop
+	  for(;ana_event<nevent0;ana_event++){
+	    if(debug)cout << Form("--> ana event #%d\n",ana_event+1);
+	    tree0->GetEntry(ana_event);
+	    tree1->GetEntry(ana_event);
+	    ana_common();
+	    tree5->Fill();
+
+	    if(showhist_flag)
+	      FillHist();
+	    if(oscillo_flag){
+	      FillGraph();
+	    }
+	  
+	    Init();
+
+	  }
+	  // ana_event=nevent0;
+	  if(debug) cout << endl;
+	  if(!debug && nevent0%event_status==0){
+	    cout << Form("--> %d events read\n",nevent0);
+	  }
+	  // ====================
+	  // if(nevent0>5000) break;
+	  if(debug) cout << Form("============================================================\n");
+
+	  // ========= OSCILLOSCOPE MODE =========
+	  if(oscillo_flag){
+	    DrawWave();
+	    if(oscillo_flag==1)
+	      cin.ignore();
+	    // else
+	    //   sleep(0.5);
+	  }
+      
+	  // ========= SHOWHIST MODE =========
+	  if(showhist_flag==1){
+	    if(nevent0%h_update==0){
+	      DrawHist();
+	      cin.ignore();
+	    }
+	  }
+	}
+	// --- STOP READING FILE AT GIVEN EVENT ---
+	if(debug && nevent0%10==0){
+	  cin.ignore();
+	}
+      }
+    }
+
+    // ===== END OF FILE =====
+    if(fin->eof()){
+      cout << endl;
+      cout << Form("---> END OF FILE READ\n");
+      if(oscillo_flag) cin.ignore();
+      break;
+    }
+    
+    // ===== BEGIN OF NEW CHANNEL READ =====
+    // -- write header info
+    if(flag_waveorge==1){
+      if(debug)
+	cout << Form("Header Info: TS(0) = %10d, Event(4) = %6d,   BN(7) = %1d, CH(3) = %2d, MultiEvent(6) = %1d\n",header[0],header[4],header[7],header[3],header[6]);
+
+      if(bn==0){
+	TS0=header[0];
+      }else if(bn==1){
+	TS1=header[0];
+      }
+      
+      ievent=header[4];
+      ch = header[3];
+      bn = header[7];
+      
+      // ===== DECODE DATA =====
+      if(detector_type[bn*16+ch])
+	dd = common_decoder(fin,bn*16+ch);
+      
+      if(detector_type[bn*16+ch]==1 || detector_type[bn*16+ch]==2){
+	// ana_seamine(bn*16+ch);
+	ana_plastic(bn*16+ch);
+      }
+    }
+    
+  } // end of while loop
+  
+  fin->close();
+  if(oscillo_flag==0){
+    tree0->AddFriend(tree1);
+    tree0->AddFriend(tree5);
+    tree0->Write("",TObject::kOverwrite);
+    tree1->Write("",TObject::kOverwrite);
+    tree2->Write("",TObject::kOverwrite);
+    tree3->Write("",TObject::kOverwrite);
+    tree4->Write("",TObject::kOverwrite);
+    tree5->Write("",TObject::kOverwrite);
+    fout->Close();
+  }
+
+  system(Form("./sortts/sortts %d",RunNumber));
+  
+  return 0;
+}
+
+

@@ -1,0 +1,10 @@
+void FitGaus(){
+  int runnumber=1096;
+  TFile * f=new TFile(Form("./root/run%04d.root",runnumber));
+  TTree* tree2=(TTree*)f->Get("tree2");
+  TTree* tree3=(TTree*)f->Get("tree3");
+
+  
+  
+
+}

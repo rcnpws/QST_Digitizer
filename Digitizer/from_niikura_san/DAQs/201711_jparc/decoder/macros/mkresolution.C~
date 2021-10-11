@@ -1,0 +1,9 @@
+{
+  TFile *f0 = TFile::Open("root/run0009.root");
+  tree3->Draw("GeE>>h1(1000,1000,1500)","","");
+  
+  TFile *f1 = TFile::Open("root/run1096.root");
+  tree3->Draw("GeE*1.0097>>h2(1000,1000,1500)","","same");
+  h2->SetLineColor(2);
+  
+}

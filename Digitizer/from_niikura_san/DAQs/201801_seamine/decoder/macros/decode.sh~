@@ -1,0 +1,5 @@
+#!/bin/bash
+
+for run in {1134..1143}; do
+    ./mktree $run
+done

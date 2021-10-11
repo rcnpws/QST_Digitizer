@@ -1,0 +1,16 @@
+{
+
+  new TCanvas("c1","c1");
+  
+  for(int i=0;i<32;i++){
+    Int_t bn = i/16;
+    Int_t ch = i%16;
+    cout << bn << " " << ch << endl;
+    // tree0->Draw(Form("MaxPH%d[%d]:MaxTT%d[%d]>>h(200,100,300,1500,0.,1500.)",bn,ch,bn,ch),"","colz");
+    tree0->Draw(Form("MaxPH%d[%d]:LED%d[%d]-Tbaf>>h(200,-100,100,1500,0.,1500.)",bn,ch,bn,ch),"Tbaf>29 && Tbaf<38","colz");
+    c1->Update();
+    cin.ignore();
+	
+  }
+
+}

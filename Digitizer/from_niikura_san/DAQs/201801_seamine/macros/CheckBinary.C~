@@ -1,0 +1,25 @@
+int CheckBinary(){
+  int RunNumbe=0;
+  char *inputfilename;
+  if(RunNumber%3==0){
+    inputfilename = Form("/data00/RCNP1801_00/run%04d.dat",RunNumber);
+  }else if(RunNumber%3==1){
+    inputfilename = Form("/data01/RCNP1801_01/run%04d.dat",RunNumber);
+  }else{
+    inputfilename = Form("/data00/RCNP1801_02/run%04d.dat",RunNumber);
+  }
+
+
+  std::ifstream *fin = new std::ifstream(inputfilename, ios::in | ios::binary);
+  cout << "---> Input File  : " << inputfilename << endl;
+  if(fin->fail()){
+    show_error(Form("File open failed!! --- %s",inputfilename));
+    return 1;
+  }
+  uint32_t dd;
+  fin->read( (char *)&dd, sizeof(int) );
+
+  cout<<dd<<endl;
+
+  return 0;
+}

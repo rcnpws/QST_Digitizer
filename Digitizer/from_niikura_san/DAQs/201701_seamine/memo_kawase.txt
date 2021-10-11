@@ -1,0 +1,10 @@
+memo by kawase
+
+# TODO for the next experiment
+
+* configure register for the extended time tag for V1730
+    * [21:20] of 0x811c should be 10.
+    * then, extended time tag will be stored in PATTERN word in the event header
+* confirm how to reset time tags in the beginnig of the run
+
+* confirm how to reboot VME crate
