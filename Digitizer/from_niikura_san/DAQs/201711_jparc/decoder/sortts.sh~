@@ -1,4 +1,0 @@
-#!/bin/bash
-
-./mktree $1
-./evtbuild/evtbuild $1

@@ -1,6 +1,0 @@
-void chkge(Int_t run){
-  cout << run << endl;
-
-  
-  
-}
